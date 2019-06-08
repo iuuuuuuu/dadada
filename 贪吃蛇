@@ -1,0 +1,206 @@
+#!/bin/python
+
+import sys
+from time import sleep
+
+
+
+from enum import Enum
+
+import numpy as np
+import threading
+
+import pygame
+from pygame.locals import *
+
+import random
+
+class Snake:
+
+    class Directions(Enum):
+        UP = 0
+        DOWN = 1
+        LEFT = 2
+        RIGHT = 3
+
+    class Point:
+        def __init__(self, x, y):
+            self.x = x
+            self.y = y
+
+    AIR = 0
+    SNAKE = 1
+    WALL = 2
+    FOOD = 3
+    TURN_UP = 10
+    TURN_DOWN = 11
+    TURN_LEFT = 12
+    TURN_RIGHT = 13
+
+    def __init__(self, width=50, height=50, block_size=(12, 12),
+                 background_color=(0, 0, 0), border_color=(100, 100, 100),
+                 snake_color=(0, 233, 233), food_color=(233, 0, 233),
+                 update_delay=0.1):
+        pygame.init()
+        self.width = width
+        self.height = height
+        self.block_size = block_size
+        self.screen = pygame.display.set_mode((width * block_size[0],
+                                               height * block_size[1]))
+        pygame.display.set_caption("snake")
+        self.background_color = background_color
+        self.border_color = border_color
+        self.snake_color = snake_color
+        self.food_color = food_color
+        self.running = False
+        self.score = 0
+
+        self.update_delay = update_delay
+
+        self.map = [[self.AIR] * width for i in range(height)]
+        self.draw_map()
+        self.place_snake()
+
+        self.place_food(6, 1)
+        self.place_food(8, 1)
+        self.place_food(10, 1)
+
+    def _rect(self, pos_x, pos_y, width, height):
+        return (pos_x * self.block_size[0], pos_y * self.block_size[1],
+        width * self.block_size[0], height * self.block_size[1])
+
+    def draw_map(self):
+        self.screen.fill(self.background_color)
+        for i in range(self.width):
+            self.map[0][i] = self.WALL
+            self.map[self.height - 1][i] = self.WALL
+        for i in range(self.height):
+            self.map[i][0] = self.WALL
+            self.map[i][self.width - 1] = self.WALL
+        pygame.draw.rect(self.screen, self.border_color, self._rect(0, 0, self.width, 1)) # draw border top
+        pygame.draw.rect(self.screen, self.border_color, self._rect(0, 0, 1, self.height)) # draw border left
+        pygame.draw.rect(self.screen, self.border_color, self._rect(0, self.height - 1, self.width, 1)) # draw border top
+        pygame.draw.rect(self.screen, self.border_color, self._rect(self.width - 1, 0, 1, self.height)) # draw border left
+        pygame.display.update()
+
+    def place_food(self, x=None, y=None):
+        if x is None or y is None:
+            x = random.randint(1, self.width - 1)
+            y = random.randint(1, self.height - 1)
+            while self.map[y][x] != self.AIR:
+                x = random.randint(1, self.width - 1)
+                y = random.randint(1, self.height - 1)
+
+        self.map[y][x] = self.FOOD
+        pygame.draw.rect(self.screen, self.food_color, self._rect(x, y, 1, 1))
+        pygame.display.update()
+        return
+
+
+    def place_snake(self):
+        self.head_pos = self.Point(5, 1)
+        self.tail_pos = self.Point(1, 1)
+        self.hd = self.head_dire = self.Directions.RIGHT
+        self.tail_dire = self.Directions.RIGHT
+        pygame.draw.rect(self.screen, self.snake_color, self._rect(1, 1, 5, 1))
+        pygame.display.update()
+        for i in range(5):
+            self.map[1][i + 1] = self.SNAKE
+
+
+    def game_loop(self):
+        while True:
+            # update snake's head
+            ## update pos
+            if self.hd != self.head_dire:
+                self.head_dire = self.hd
+                self.map[self.head_pos.y][self.head_pos.x] = 10 + self.hd.value
+
+
+            if self.head_dire == self.Directions.LEFT:
+                self.head_pos.x -= 1
+            elif self.head_dire == self.Directions.RIGHT:
+                self.head_pos.x += 1
+            elif self.head_dire == self.Directions.UP:
+                self.head_pos.y -= 1
+            elif self.head_dire == self.Directions.DOWN:
+                self.head_pos.y += 1
+
+            item = self.map[self.head_pos.y][self.head_pos.x]
+            if (item in (self.WALL, self.SNAKE)) or item >= 10:
+                self.on_gameover()
+                self.running = False
+                return
+            elif item in (self.AIR, self.FOOD):
+                pygame.draw.rect(self.screen, self.snake_color, self._rect(self.head_pos.x, self.head_pos.y, 1, 1))
+                self.map[self.head_pos.y][self.head_pos.x] = self.SNAKE
+
+            ## update snake's tail
+            if item != self.FOOD:
+                pygame.draw.rect(self.screen, self.background_color, self._rect(self.tail_pos.x, self.tail_pos.y, 1, 1))
+                self.map[self.tail_pos.y][self.tail_pos.x] = self.AIR
+                if self.tail_dire == self.Directions.LEFT:
+                    self.tail_pos.x -= 1
+                elif self.tail_dire == self.Directions.RIGHT:
+                    self.tail_pos.x += 1
+                elif self.tail_dire == self.Directions.UP:
+                    self.tail_pos.y -= 1
+                elif self.tail_dire == self.Directions.DOWN:
+                    self.tail_pos.y += 1
+
+                item = self.map[self.tail_pos.y][self.tail_pos.x]
+                if item >= 10:
+                    self.tail_dire = self.Directions(item - 10)
+            else:
+                # place food
+                self.place_food()
+
+                # update score
+                self.score += 1
+
+            pygame.display.update()
+            sleep(self.update_delay)
+
+    def input_loop(self):
+        while True:
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    sys.exit()
+                elif event.type == KEYDOWN and self.running:
+                    if event.key == K_UP:
+                        if self.head_dire in (self.Directions.RIGHT, self.Directions.LEFT):
+                            self.hd = self.Directions.UP
+                    elif event.key == K_DOWN:
+                        if self.head_dire in (self.Directions.RIGHT, self.Directions.LEFT):
+                            self.hd = self.Directions.DOWN
+                    elif event.key == K_LEFT:
+                        if self.head_dire in (self.Directions.UP, self.Directions.DOWN):
+                            self.hd = self.Directions.LEFT
+                    elif event.key == K_RIGHT:
+                        if self.head_dire in (self.Directions.UP, self.Directions.DOWN):
+                            self.hd = self.Directions.RIGHT
+
+    def run(self):
+        self.thread = threading.Thread(group=None, target=self.game_loop, daemon=True)
+        self.thread.start()
+        self.running = True
+        return self.input_loop()
+
+    def on_gameover(self):
+        width = self.width * self.block_size[0]
+        height = self.height * self.block_size[1]
+        font = pygame.font.Font(None, 120)
+        font1 = pygame.font.Font(None, 60)
+        text_image = font.render('Game Over', True, (233, 233, 233))
+        text_image1 = font1.render('score: {}'.format(self.score), True, (233, 233, 233))
+
+        # place the word in the middle
+        w = text_image.get_width()
+        w1 = text_image1.get_width()
+        self.screen.blit(text_image, ((width - w) // 2, height // 4))
+        self.screen.blit(text_image1, ((width - w1) // 2, height // 2))
+        pygame.display.update()
+
+if __name__ == '__main__':
+    Game = Snake()
+    Game.run()
